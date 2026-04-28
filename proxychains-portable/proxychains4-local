@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+base_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$base_dir/bin/proxychains4" -f "$base_dir/etc/proxychains.conf" "$@"
