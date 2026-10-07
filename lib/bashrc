@@ -1,0 +1,11 @@
+# Стартовый файл bash для p2k-terminal.sh.
+# Читает обычные настройки пользователя и добавляет метку (p2k) в приглашение.
+
+if [ -f /etc/bash.bashrc ]; then
+    . /etc/bash.bashrc
+fi
+if [ -f "$HOME/.bashrc" ]; then
+    . "$HOME/.bashrc"
+fi
+
+PS1="(p2k) ${PS1:-\\u@\\h:\\w\\$ }"

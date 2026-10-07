@@ -1,0 +1,61 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "browser",
+      "listen": "127.0.0.1",
+      "port": 21000,
+      "protocol": "http",
+      "settings": {}
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "vpn",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "АДРЕС_СЕРВЕРА",
+            "port": 443,
+            "users": [
+              {
+                "id": "UUID_ПОЛЬЗОВАТЕЛЯ",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "ИМЯ_ДЛЯ_SNI",
+          "fingerprint": "chrome",
+          "publicKey": "ПУБЛИЧНЫЙ_КЛЮЧ",
+          "shortId": "SHORT_ID",
+          "spiderX": "/"
+        },
+        "sockopt": {
+          "dialerProxy": "corporate-proxy"
+        }
+      }
+    },
+    {
+      "tag": "corporate-proxy",
+      "protocol": "http",
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1",
+            "port": 18080
+          }
+        ]
+      }
+    }
+  ]
+}
