@@ -379,25 +379,85 @@ p2k_export_proxy_env() {
 
 # ------------------------------------------------------------------ Xray
 
-# Определяет вход Xray, к которому подключать браузер. Печатает
-# «протокол адрес порт». Нужен python3; без него используется
+# Определяет вход Xray, к которому подключать браузер: первый вход
+# http, socks или mixed с числовым портом. Печатает «протокол адрес порт».
+# Если такого входа нет или конфиг не разобран, печатает
 # http 127.0.0.1 21000.
+#
+# JSON разбирается на awk, без python3 и jq. Комментарии //, /* */ и #,
+# которые допускает Xray, пропускаются.
 p2k_xray_inbound() {
-    local result=""
-    if command -v python3 >/dev/null; then
-        result="$(python3 -I - "$XRAY_CONFIG" <<'EOF' 2>/dev/null
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as fh:
-    config = json.load(fh)
-for inbound in config.get("inbounds") or []:
-    proto = inbound.get("protocol")
-    if proto in ("http", "socks", "mixed") and isinstance(inbound.get("port"), int):
-        listen = inbound.get("listen") or "0.0.0.0"
-        print("socks" if proto == "socks" else "http", listen, inbound["port"])
-        break
-EOF
-)" || result=""
-    fi
+    local result
+    result="$(awk -- '
+        { text = text $0 "\n" }
+
+        # Путь к текущему месту: объект верхнего уровня, ключ inbounds,
+        # массив, объект входа.
+        function in_inbound() {
+            return depth == 3 && type[1] == "o" && key[1] == "inbounds" &&
+                type[2] == "a" && type[3] == "o"
+        }
+
+        function on_value(value, kind) {
+            if (!in_inbound()) return
+            if (key[3] == "protocol" && kind == "s") proto = value
+            else if (key[3] == "listen" && kind == "s") listen = value
+            else if (key[3] == "port" && value ~ /^[0-9]+$/) port = value
+        }
+
+        function open_container(kind) {
+            on_value("", "c")
+            depth++
+            type[depth] = kind
+            key[depth] = ""
+            want_key[depth] = (kind == "o")
+            if (in_inbound()) proto = listen = port = ""
+        }
+
+        function close_container() {
+            if (in_inbound() && port != "" &&
+                (proto == "http" || proto == "socks" || proto == "mixed")) {
+                print (proto == "socks" ? "socks" : "http"), \
+                    (listen == "" ? "0.0.0.0" : listen), port
+                exit
+            }
+            depth--
+        }
+
+        END {
+            n = length(text)
+            i = 1
+            while (i <= n) {
+                c = substr(text, i, 1)
+                if (c == "\"") {
+                    s = ""
+                    for (i++; i <= n; i++) {
+                        c = substr(text, i, 1)
+                        if (c == "\\") { i++; s = s substr(text, i, 1); continue }
+                        if (c == "\"") break
+                        s = s c
+                    }
+                    i++
+                    if (type[depth] == "o" && want_key[depth]) key[depth] = s
+                    else on_value(s, "s")
+                } else if (c == "{") { open_container("o"); i++ }
+                else if (c == "[") { open_container("a"); i++ }
+                else if (c == "}" || c == "]") { close_container(); i++ }
+                else if (c == ":") { want_key[depth] = 0; i++ }
+                else if (c == ",") { if (type[depth] == "o") want_key[depth] = 1; i++ }
+                else if (c == "#" || substr(text, i, 2) == "//") {
+                    i += index(substr(text, i), "\n")
+                } else if (substr(text, i, 2) == "/*") {
+                    j = index(substr(text, i + 2), "*/")
+                    i = j ? i + j + 3 : n + 1
+                } else if (c ~ /[-+0-9a-zA-Z.]/) {
+                    s = ""
+                    while (i <= n && (c = substr(text, i, 1)) ~ /[-+0-9a-zA-Z.]/) { s = s c; i++ }
+                    on_value(s, "n")
+                } else i++
+            }
+        }
+    ' "$XRAY_CONFIG" 2>/dev/null)" || result=""
     printf '%s\n' "${result:-http 127.0.0.1 21000}"
 }
 
