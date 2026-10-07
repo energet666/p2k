@@ -261,6 +261,54 @@ p2k_release_all() {
 
 # -------------------------------------------------------------------- px
 
+# Путь к системной библиотеке GSSAPI (MIT Kerberos) или пустая строка.
+p2k_system_gssapi() {
+    local dir
+    for dir in /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu /usr/lib64 /lib64 /usr/lib /lib; do
+        if [[ -e $dir/libgssapi_krb5.so.2 ]]; then
+            printf '%s\n' "$dir/libgssapi_krb5.so.2"
+            return 0
+        fi
+    done
+    if [[ -x /sbin/ldconfig ]]; then
+        /sbin/ldconfig -p 2>/dev/null |
+            awk '/libgssapi_krb5\.so\.2 .*x86-64/ { print $NF; exit }'
+    fi
+}
+
+# Собирает команду запуска px в массив с именем $1, остальные аргументы
+# передаются px.
+#
+# Встроенная в px библиотека Kerberos не знает о доработках Astra Linux
+# и модулях SSSD или ALD. Поэтому по умолчанию px подгружает системную
+# библиотеку GSSAPI, ту же, которой пользуются klist и kinit. Её функции
+# перекрывают встроенные. Режим задаётся переменной P2K_GSSAPI:
+#   auto     системная библиотека, если она есть, иначе встроенная;
+#   system   только системная;
+#   bundled  только встроенная.
+p2k_px_command() {
+    local -n out="$1"
+    shift
+    local mode="${P2K_GSSAPI:-auto}" lib=""
+
+    case "$mode" in
+        auto | system) lib="$(p2k_system_gssapi)" ;;
+        bundled) ;;
+        *) p2k_fail "неизвестное значение P2K_GSSAPI: $mode (auto, system или bundled)" ;;
+    esac
+    if [[ $mode == system && -z $lib ]]; then
+        p2k_fail "P2K_GSSAPI=system, но системная библиотека libgssapi_krb5.so.2 не найдена"
+    fi
+
+    if [[ -n $lib ]]; then
+        P2K_GSSAPI_USED="system:$lib"
+        out=(env "LD_PRELOAD=$lib${LD_PRELOAD:+:$LD_PRELOAD}" "$PX_BIN" "$@")
+    else
+        P2K_GSSAPI_USED=bundled
+        out=("$PX_BIN" "$@")
+    fi
+}
+
 p2k_px_acquire() {
     local port
     port="$(p2k_px_port)"
@@ -273,8 +321,10 @@ p2k_px_acquire() {
         p2k_dialog warning "$(p2k_kerberos_hint)"
     fi
 
-    p2k_service_acquire px "$PX_HOST" "$port" \
-        "$PX_BIN" --config="$PX_CONFIG" ||
+    local -a px_cmd
+    p2k_px_command px_cmd --config="$PX_CONFIG"
+    p2k_log "px: библиотека GSSAPI $P2K_GSSAPI_USED"
+    p2k_service_acquire px "$PX_HOST" "$port" "${px_cmd[@]}" ||
         p2k_fail "не удалось запустить px. Подробности в $P2K_LOG_DIR/px.log"
 
     P2K_PROXY_URL="http://$PX_HOST:$port"
