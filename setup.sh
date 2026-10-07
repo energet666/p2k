@@ -349,12 +349,13 @@ if ((${#problems[@]} == 0)); then
         "  p2k-terminal.desktop   терминал через прокси" \
         "  p2k-chrome.desktop     Chromium через Xray" \
         "" \
+        "Подробности: README.md" \
         "Если что-то не работает: app/p2k-check.sh"
 else
     lines=("Осталось сделать:")
     for item in "${problems[@]}"; do
         lines+=("  $UI_INFO $item")
     done
-    lines+=("" "Затем запустите setup.sh ещё раз.")
+    lines+=("" "Затем запустите setup.sh ещё раз." "Подробности: README.md")
     ui_box "Почти готово" "${lines[@]}"
 fi

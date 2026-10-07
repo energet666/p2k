@@ -11,8 +11,8 @@
 # Загрузка идёт через px (см. build/download.sh), P2K_DIRECT=1 отключает это.
 #
 # Результат: dist/p2k-linux-x86_64-ГГГГММДД.tar.gz и файл .sha256 рядом.
-# В архиве каталог p2k, а в нём только setup.sh и каталог app со всем
-# остальным. Личный xray-config.json и каталог data в архив не попадают.
+# В архиве каталог p2k, а в нём только setup.sh, README.md и каталог app
+# со всем остальным. Личный xray-config.json и каталог data в архив не попадают.
 
 set -Eeuo pipefail
 
@@ -103,7 +103,7 @@ mkdir -p -- "$app"
 (cd -- "$P2K_DIR" && tar -cf - --exclude='.update.*' -- "${APP_FILES[@]}") |
     (cd -- "$app" && tar -xpf -)
 cp -- "$P2K_ROOT/setup.sh" "$root/setup.sh"
-cp -- "$P2K_ROOT/README.md" "$app/README.md"
+cp -- "$P2K_ROOT/README.md" "$root/README.md"
 
 cat >"$app/VERSIONS.txt" <<EOF
 p2k для Linux x86_64, сборка $stamp
