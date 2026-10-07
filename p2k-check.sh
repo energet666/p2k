@@ -2,12 +2,14 @@
 #
 # Диагностика авторизации на корпоративном прокси.
 #
-#   ./p2k-check.sh [хост]     по умолчанию проверяется example.com
+#   ./p2k-check.sh [сайт ...]   по умолчанию ya.ru и example.com
 #
 # Скрипт показывает сведения о билете Kerberos, затем запускает отдельный
 # экземпляр px и проверяет вход через прокси двумя способами: с системной
-# библиотекой GSSAPI и со встроенной в px. Для каждого способа пишется
-# трассировка Kerberos. Полный отчёт сохраняется в data/logs.
+# библиотекой GSSAPI и со встроенной в px. Отдельно видно, прошла ли
+# авторизация и пустил ли прокси на каждый сайт. Время ожидания ответа
+# задаёт P2K_CHECK_TIMEOUT (по умолчанию 90 секунд). Полный отчёт
+# с трассировкой Kerberos сохраняется в data/logs.
 #
 # Отчёт содержит имя пользователя, имена серверов и типы ключей,
 # но не содержит паролей и самих билетов.
@@ -19,11 +21,14 @@ P2K_DIR="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)
 . "$P2K_DIR/lib/common.sh"
 
 if [[ ${1:-} == -h || ${1:-} == --help ]]; then
-    sed -n '3,13s/^# \{0,1\}//p' "$0"
+    sed -n '3,15s/^# \{0,1\}//p' "$0"
     exit 0
 fi
 
-target="${1:-example.com}"
+targets=("$@")
+((${#targets[@]})) || targets=(ya.ru example.com)
+timeout="${P2K_CHECK_TIMEOUT:-90}"
+[[ $timeout =~ ^[0-9]+$ ]] || timeout=90
 mkdir -p -- "$P2K_LOG_DIR"
 stamp="$(date +%Y%m%d-%H%M%S)"
 report="$P2K_LOG_DIR/check-$stamp.txt"
@@ -61,7 +66,7 @@ probe() {
     (
         exec 3<>"/dev/tcp/127.0.0.1/$port" || exit 1
         printf 'CONNECT %s:443 HTTP/1.1\r\nHost: %s:443\r\n\r\n' "$host" "$host" >&3
-        IFS= read -r -t 60 line <&3 || true
+        IFS= read -r -t "$((timeout + 15))" line <&3 || true
         printf '%s\n' "${line%$'\r'}"
     )
 }
@@ -118,7 +123,47 @@ modes=()
 [[ -n $system_lib ]] && modes+=(system)
 modes+=(bundled)
 
-declare -A result=()
+# Что случилось с авторизацией, по журналу px.
+auth_verdict() {
+    local log="$1" error
+    error="$(grep -o -E 'gss_init_sec_context\(\) failed: .*' -- "$log" 2>/dev/null | head -n 1 || true)"
+    if grep -q 'Proxy-Authorization: Negotiate' -- "$log" 2>/dev/null; then
+        printf 'OK: токен Kerberos сформирован и отправлен прокси\n'
+    elif [[ -n $error ]]; then
+        printf 'ОШИБКА: токен Kerberos не сформирован (%s)\n' "$error"
+    elif grep -q 'Proxy-Authenticate' -- "$log" 2>/dev/null; then
+        printf 'ОШИБКА: прокси запросил авторизацию, но px её не выполнил\n'
+    else
+        printf 'прокси не запрашивал авторизацию\n'
+    fi
+}
+
+# Расшифровка ответа px на CONNECT по строке статуса и по журналу px,
+# записанному во время этой проверки.
+site_verdict() {
+    local status="$1" seconds="$2" log="$3"
+    if [[ $status == *" 200"* ]]; then
+        printf 'доступен (%s с)\n' "$seconds"
+    elif grep -q 'response 403' <<<"$log"; then
+        printf 'корпоративный прокси запретил доступ к сайту (403)\n'
+    elif grep -q 'response 407' <<<"$log"; then
+        printf 'корпоративный прокси не принял авторизацию (407)\n'
+    elif grep -q -i 'timed out' <<<"$log" || [[ -z $status || $status == *" 504"* ]]; then
+        printf 'корпоративный прокси не ответил за %s с: сайт закрыт для корпоративной сети или прокси слишком долго к нему подключается\n' "$seconds"
+    elif grep -q -i 'resolve' <<<"$log"; then
+        printf 'не найден адрес корпоративного прокси (DNS)\n'
+    elif grep -q -i -E 'Failed to connect|refused' <<<"$log"; then
+        printf 'нет связи с корпоративным прокси\n'
+    elif [[ $status =~ \ ([0-9]{3}) ]]; then
+        local upstream
+        upstream="$(grep -o -E 'response [0-9]{3}' <<<"$log" | tail -n 1 || true)"
+        printf 'ошибка %s%s\n' "${BASH_REMATCH[1]}" "${upstream:+, ответ прокси: ${upstream#response }}"
+    else
+        printf '%s (%s с)\n' "$status" "$seconds"
+    fi
+}
+
+declare -A auth=() sites=() any_ok=()
 for mode in "${modes[@]}"; do
     section "Проверка входа: библиотека $mode"
     port="$(free_port)" || {
@@ -131,7 +176,7 @@ for mode in "${modes[@]}"; do
 
     declare -a cmd=()
     P2K_GSSAPI="$mode" p2k_px_command cmd --config="$PX_CONFIG" \
-        --listen=127.0.0.1 --port="$port" --log=4
+        --listen=127.0.0.1 --port="$port" --log=4 --socktimeout="$timeout"
     KRB5_TRACE="$trace" "${cmd[@]}" </dev/null >"$pxlog" 2>&1 &
     px_pid=$!
 
@@ -141,44 +186,70 @@ for mode in "${modes[@]}"; do
         sleep 0.1
     done
 
-    status="$(probe "$port" "$target" || true)"
+    # Встроенную библиотеку достаточно проверить на одном сайте.
+    mode_targets=("${targets[@]}")
+    [[ $mode == bundled && -n $system_lib ]] && mode_targets=("${targets[0]}")
+
+    sites[$mode]=""
+    for host in "${mode_targets[@]}"; do
+        printf 'Проверяю %s (ожидание до %s с)...\n' "$host" "$timeout"
+        started=$SECONDS
+        lines_before="$(wc -l <"$pxlog")"
+        status="$(probe "$port" "$host" || true)"
+        sleep 0.5
+        verdict="$(site_verdict "$status" "$((SECONDS - started))" \
+            "$(tail -n "+$((lines_before + 1))" -- "$pxlog")")"
+        printf '  %s: %s\n' "$host" "$verdict"
+        sites[$mode]+="  $host: $verdict"$'\n'
+        [[ $status == *" 200"* ]] && any_ok[$mode]=1
+    done
     stop_px
 
-    result[$mode]="${status:-нет ответа}"
-    printf 'Ответ на CONNECT %s:443: %s\n' "$target" "${result[$mode]}"
+    auth[$mode]="$(auth_verdict "$pxlog")"
+    printf 'Авторизация: %s\n' "${auth[$mode]}"
     printf -- '--- Ошибки из журнала px:\n'
-    px_errors="$(grep -i -E 'gss_|tunnel failed|authentication failed|Proxy-Authenticate' -- "$pxlog" 2>/dev/null |
+    px_errors="$(grep -i -E 'gss_|tunnel failed|authentication failed|Proxy-Authenticate|timed out' -- "$pxlog" 2>/dev/null |
         sed -E 's/^[0-9.]+: [^ ]+: [0-9]+: //' | sort -u | head -n 8 || true)"
     printf '%s\n' "${px_errors:-<ошибок не найдено>}"
     printf -- '--- Возможные причины из трассировки Kerberos:\n'
     problems="$(trace_problems "$trace")"
     printf '%s\n' "${problems:-<ошибок не найдено>}"
-    printf -- '--- Запрошенные билеты:\n'
-    grep -o -E 'Getting credentials [^ ]+ -> [^ ]+|Retrieving [^ ]+ -> [^ ]+ from [^ ]+ with result: [^/]*' \
-        -- "$trace" 2>/dev/null | sort -u | head -n 10 || true
 
     {
         printf '\n----- Полная трассировка Kerberos (%s) -----\n' "$mode"
         cat -- "$trace"
-        printf '\n----- Журнал px (%s), последние 80 строк -----\n' "$mode"
-        tail -n 80 -- "$pxlog"
+        printf '\n----- Журнал px (%s), последние 150 строк -----\n' "$mode"
+        tail -n 150 -- "$pxlog"
     } >>"$work/details.txt"
 done
 
 section "Итог"
-ok_mode=""
+best=""
 for mode in "${modes[@]}"; do
-    printf '%-8s %s\n' "$mode" "${result[$mode]:-не проверялся}"
-    [[ -z $ok_mode && ${result[$mode]:-} == *" 200"* ]] && ok_mode="$mode"
+    printf 'Библиотека %s\n  авторизация: %s\n%s' "$mode" "${auth[$mode]:-не проверялась}" "${sites[$mode]:-}"
+    if [[ -z $best && ${auth[$mode]:-} == OK* ]]; then
+        best="$mode"
+    fi
 done
+printf '\n'
 
-if [[ -n $ok_mode ]]; then
-    printf '\nВход работает с библиотекой %s.\n' "$ok_mode"
-    if [[ $ok_mode == bundled && -n $system_lib ]]; then
+if [[ -n $best ]]; then
+    if [[ $best == bundled && -n $system_lib ]]; then
+        printf 'Kerberos работает только со встроенной библиотекой.\n'
         printf 'Задайте P2K_GSSAPI=bundled перед запуском скриптов p2k.\n'
+    else
+        printf 'Kerberos работает: px входит на корпоративный прокси по билету сеанса.\n'
+    fi
+    if [[ -n ${any_ok[$best]:-} ]]; then
+        printf 'Сайты с ошибкой не пропускает сам корпоративный прокси. Это правило сети, а не ошибка p2k.\n'
+        printf 'Такие сайты открывайте в браузере p2k через Xray.\n'
+    else
+        printf 'Но прокси не открыл ни один из проверенных сайтов.\n'
+        printf 'Проверьте сайт, который точно разрешён в вашей сети:\n'
+        printf '  ./p2k-check.sh имя.сайта\n'
     fi
 else
-    printf '\nВход через прокси не удался. Частые причины:\n'
+    printf 'Вход на корпоративный прокси не удался. Частые причины:\n'
     printf '  * нет билета Kerberos: проверьте klist, получите билет командой kinit;\n'
     printf '  * «Server not found in Kerberos database»: у прокси нет учётной записи\n'
     printf '    службы HTTP/<имя прокси>; укажите в px.ini имя, под которым прокси\n'
