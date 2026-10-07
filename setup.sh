@@ -3,10 +3,12 @@
 # Однократная подготовка p2k на новой машине.
 #
 #   ./setup.sh               подготовить всё
-#   ./setup.sh --uninstall   удалить ярлыки p2k из меню и с рабочего стола
+#   ./setup.sh --uninstall   удалить ярлыки p2k из меню и с рабочего стола,
+#                            например созданные прежними версиями p2k
 #
-# Скрипт восстанавливает права на запуск, создаёт ярлыки и проверяет,
-# что всё готово к работе. Ничего не загружает и не устанавливает:
+# Скрипт восстанавливает права на запуск, создаёт ярлыки в каталоге
+# проекта и проверяет, что всё готово к работе. Вне каталога проекта он
+# ничего не создаёт и не меняет. Ничего не загружает и не устанавливает:
 # px, Xray и Chromium уже лежат в каталоге opt.
 
 set -Eeuo pipefail
@@ -23,7 +25,7 @@ for arg in "$@"; do
     case "$arg" in
         --uninstall) action=uninstall ;;
         -h | --help)
-            sed -n '3,10s/^# \{0,1\}//p' "$0"
+            sed -n '3,12s/^# \{0,1\}//p' "$0"
             exit 0
             ;;
         *) p2k_fail "неизвестный параметр: $arg" ;;
@@ -69,44 +71,51 @@ EOF
     chmod +x -- "$file"
 }
 
-remove_launchers() {
-    local dir name
-    for name in "${LAUNCHERS[@]}"; do
-        rm -f -- "$APPS_DIR/$name.desktop"
-        while IFS= read -r dir; do
-            rm -f -- "$dir/$name.desktop"
-        done < <(desktop_dirs)
+# Ярлыки p2k вне каталога проекта: в меню и на рабочих столах.
+# Ярлык считается ярлыком p2k, если запускает p2k-terminal.sh или p2k-chrome.sh.
+system_launchers() {
+    local dir name file
+    local -a dirs=("$APPS_DIR")
+    mapfile -t -O 1 dirs < <(desktop_dirs)
+    for dir in "${dirs[@]}"; do
+        for name in "${LAUNCHERS[@]}"; do
+            file="$dir/$name.desktop"
+            if [[ -f $file ]] && grep -q -E '^Exec=.*p2k-(terminal|chrome)\.sh' -- "$file"; then
+                printf '%s\n' "$file"
+            fi
+        done
     done
 }
 
+remove_launchers() {
+    local file found=0
+    while IFS= read -r file; do
+        rm -f -- "$file"
+        p2k_info "Удалён ярлык: $file"
+        found=1
+    done < <(system_launchers)
+    ((found)) || p2k_info "Ярлыков p2k в меню и на рабочем столе нет"
+}
+
 install_launchers() {
-    local dir name chrome_icon=web-browser
+    local chrome_icon=web-browser
     [[ -f $P2K_DIR/opt/chromium/product_logo_48.png ]] &&
         chrome_icon="$P2K_DIR/opt/chromium/product_logo_48.png"
 
-    mkdir -p -- "$APPS_DIR"
-    write_launcher "$APPS_DIR/p2k-terminal.desktop" \
+    write_launcher "$P2K_DIR/p2k-terminal.desktop" \
         "p2k: терминал через прокси" \
         "Терминал, в котором программы работают через корпоративный прокси" \
         "$P2K_DIR/p2k-terminal.sh" utilities-terminal "System;TerminalEmulator;Network;"
-    write_launcher "$APPS_DIR/p2k-chrome.desktop" \
+    write_launcher "$P2K_DIR/p2k-chrome.desktop" \
         "p2k: Chromium через Xray" \
         "Отдельный Chromium, работающий через Xray и корпоративный прокси" \
         "$P2K_DIR/p2k-chrome.sh" "$chrome_icon" "Network;WebBrowser;"
-
-    while IFS= read -r dir; do
-        for name in "${LAUNCHERS[@]}"; do
-            cp -f -- "$APPS_DIR/$name.desktop" "$dir/$name.desktop"
-            chmod +x -- "$dir/$name.desktop"
-        done
-        p2k_info "Ярлыки добавлены на рабочий стол: $dir"
-    done < <(desktop_dirs)
-    p2k_info "Ярлыки добавлены в меню приложений"
+    p2k_info "Ярлыки созданы в каталоге проекта: p2k-terminal.desktop и p2k-chrome.desktop"
+    p2k_info "При желании скопируйте их на рабочий стол или в меню сами."
 }
 
 if [[ $action == uninstall ]]; then
     remove_launchers
-    p2k_info "Ярлыки p2k удалены. Каталог проекта можно просто удалить."
     exit 0
 fi
 
@@ -141,6 +150,12 @@ fi
 
 # 3. Ярлыки.
 install_launchers
+mapfile -t old_launchers < <(system_launchers)
+if ((${#old_launchers[@]})); then
+    p2k_info "Вне каталога проекта найдены ярлыки p2k:"
+    printf '  %s\n' "${old_launchers[@]}"
+    p2k_info "Если они не нужны, удалите их командой: ./setup.sh --uninstall"
+fi
 
 # 4. Конфигурация Xray.
 if [[ ! -f $XRAY_CONFIG ]]; then
@@ -151,7 +166,7 @@ fi
 
 printf '\n'
 if ((${#problems[@]} == 0)); then
-    p2k_info "Готово. Используйте ярлыки «p2k: терминал через прокси» и «p2k: Chromium через Xray»."
+    p2k_info "Готово. Запускайте p2k ярлыками p2k-terminal.desktop и p2k-chrome.desktop в каталоге проекта."
 else
     p2k_info "Подготовка завершена, но осталось сделать:"
     for item in "${problems[@]}"; do

@@ -5,6 +5,10 @@
 /opt/xray/
 /opt/chromium/
 
+# Ярлыки, которые создаёт setup.sh для конкретного каталога
+/p2k-terminal.desktop
+/p2k-chrome.desktop
+
 # Личная конфигурация Xray
 /xray-config.json
 
