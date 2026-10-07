@@ -112,6 +112,44 @@ p2k_require_tools() {
     done
 }
 
+# Ищет эмулятор терминала и запускает в нём скрипт с аргументами.
+# Скрипт получает P2K_IN_TERMINAL=1 и по ней понимает, что окно открыто
+# специально для него.
+#   p2k_open_in_terminal скрипт [аргументы...]
+p2k_open_in_terminal() {
+    local self="$1"
+    shift
+    local -a cmd=()
+
+    if [[ -n ${P2K_TERMINAL:-} ]]; then
+        # Пользовательская команда, например: P2K_TERMINAL="konsole -e"
+        read -r -a cmd <<<"$P2K_TERMINAL"
+    elif command -v x-terminal-emulator >/dev/null; then
+        cmd=(x-terminal-emulator -e)
+    elif command -v fly-term >/dev/null; then
+        cmd=(fly-term -e)
+    elif command -v konsole >/dev/null; then
+        cmd=(konsole -e)
+    elif command -v xfce4-terminal >/dev/null; then
+        cmd=(xfce4-terminal -x)
+    elif command -v mate-terminal >/dev/null; then
+        cmd=(mate-terminal -x)
+    elif command -v gnome-terminal >/dev/null; then
+        cmd=(gnome-terminal --)
+    elif command -v qterminal >/dev/null; then
+        cmd=(qterminal -e)
+    elif command -v lxterminal >/dev/null; then
+        cmd=(lxterminal -e)
+    elif command -v xterm >/dev/null; then
+        cmd=(xterm -e)
+    else
+        p2k_fail "не найден эмулятор терминала. Запустите $self из открытого терминала."
+    fi
+
+    export P2K_IN_TERMINAL=1
+    exec "${cmd[@]}" "$self" "$@"
+}
+
 # ----------------------------------------------------------------- Kerberos
 
 # Возвращает 0, если у сеанса есть действующий билет Kerberos или проверить
@@ -367,8 +405,8 @@ EOF
 # Вызывается до запуска px, чтобы не поднимать его зря.
 p2k_xray_check() {
     [[ -x $XRAY_BIN ]] || p2k_fail "Xray не найден: $XRAY_BIN. Распакуйте релизный архив p2k заново и запустите setup.sh."
-    [[ -f $XRAY_CONFIG ]] || p2k_fail "нет конфигурации Xray: $XRAY_CONFIG.
-Скопируйте свой конфиг в этот файл. Как его составить, описано в README.md."
+    [[ -f $XRAY_CONFIG ]] || p2k_fail "Xray ещё не настроен: нет файла $XRAY_CONFIG.
+Запустите setup.sh и вставьте ссылку на ваш сервер (vless://, trojan:// или ss://)."
 
     local listen check_log
     read -r P2K_XRAY_PROTO listen P2K_XRAY_PORT <<<"$(p2k_xray_inbound)"

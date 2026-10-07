@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Загружает официальную сборку Chromium (snapshot) в opt/chromium.
+# Загружает официальную сборку Chromium (snapshot) в app/opt/chromium.
 #   build/install-chromium.sh [ревизия]
 #
 # Загрузка идёт через px, если не задана переменная https_proxy
@@ -8,11 +8,12 @@
 
 set -Eeuo pipefail
 
-P2K_DIR="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
-# shellcheck source=common.sh
+P2K_ROOT="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
+P2K_DIR="$P2K_ROOT/app"
+# shellcheck source=../app/lib/common.sh
 . "$P2K_DIR/lib/common.sh"
 # shellcheck source=download.sh
-. "$P2K_DIR/build/download.sh"
+. "$P2K_ROOT/build/download.sh"
 
 CHROMIUM_DIR="$(dirname -- "$CHROMIUM_BIN")"
 SNAPSHOT_BASE="https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64"

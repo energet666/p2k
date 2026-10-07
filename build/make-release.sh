@@ -11,22 +11,23 @@
 # Загрузка идёт через px (см. build/download.sh), P2K_DIRECT=1 отключает это.
 #
 # Результат: dist/p2k-linux-x86_64-ГГГГММДД.tar.gz и файл .sha256 рядом.
-# Личный xray-config.json и каталог data в архив не попадают.
+# В архиве каталог p2k, а в нём только setup.sh и каталог app со всем
+# остальным. Личный xray-config.json и каталог data в архив не попадают.
 
 set -Eeuo pipefail
 
-P2K_DIR="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
-# shellcheck source=../lib/common.sh
+P2K_ROOT="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
+P2K_DIR="$P2K_ROOT/app"
+# shellcheck source=../app/lib/common.sh
 . "$P2K_DIR/lib/common.sh"
 
-DIST_DIR="${DIST_DIR:-$P2K_DIR/dist}"
+DIST_DIR="${DIST_DIR:-$P2K_ROOT/dist}"
 XRAY_DIR="$(dirname -- "$XRAY_BIN")"
 CHROMIUM_DIR="$(dirname -- "$CHROMIUM_BIN")"
 
-# Что входит в релиз. Пути относительно корня проекта.
-RELEASE_FILES=(
-    README.md
-    setup.sh
+# Что входит в каталог app релиза. Пути относительно app.
+# Рядом с app в архиве лежит только setup.sh.
+APP_FILES=(
     p2k-terminal.sh
     p2k-chrome.sh
     p2k-check.sh
@@ -75,11 +76,11 @@ refresh_component() {
 
 mkdir -p -- "$P2K_DIR/opt"
 if ((update)) || [[ ! -x $XRAY_BIN ]]; then
-    refresh_component "$P2K_DIR/build/install-xray.sh" "$XRAY_DIR" \
+    refresh_component "$P2K_ROOT/build/install-xray.sh" "$XRAY_DIR" \
         XRAY_BIN xray "${XRAY_VERSION:-}"
 fi
 if ((update)) || [[ ! -x $CHROMIUM_BIN ]]; then
-    refresh_component "$P2K_DIR/build/install-chromium.sh" "$CHROMIUM_DIR" \
+    refresh_component "$P2K_ROOT/build/install-chromium.sh" "$CHROMIUM_DIR" \
         CHROMIUM_BIN chrome "${CHROMIUM_REVISION:-}"
 fi
 
@@ -97,13 +98,17 @@ staging="$(mktemp -d)"
 root="$staging/p2k"
 mkdir -p -- "$root"
 
-(cd -- "$P2K_DIR" && tar -cf - --exclude='.update.*' -- "${RELEASE_FILES[@]}") |
-    (cd -- "$root" && tar -xpf -)
+app="$root/app"
+mkdir -p -- "$app"
+(cd -- "$P2K_DIR" && tar -cf - --exclude='.update.*' -- "${APP_FILES[@]}") |
+    (cd -- "$app" && tar -xpf -)
+cp -- "$P2K_ROOT/setup.sh" "$root/setup.sh"
+cp -- "$P2K_ROOT/README.md" "$app/README.md"
 
-cat >"$root/VERSIONS.txt" <<EOF
+cat >"$app/VERSIONS.txt" <<EOF
 p2k для Linux x86_64, сборка $stamp
 
-px:       готовая сборка из opt/px
+px:       готовая сборка из app/opt/px
 Xray:     $xray_version
 Chromium: $chromium_version, snapshot $chromium_revision
 
@@ -113,8 +118,8 @@ EOF
 
 # Единые права: всё читается всеми, скрипты и программы запускаются.
 chmod -R u+rwX,go+rX,go-w -- "$root"
-chmod +x -- "$root"/p2k-*.sh "$root/setup.sh" "$root/opt/px/px" \
-    "$root/opt/xray/xray" "$root/opt/chromium/chrome"
+chmod +x -- "$root/setup.sh" "$app"/p2k-*.sh "$app/opt/px/px" \
+    "$app/opt/xray/xray" "$app/opt/chromium/chrome"
 
 mkdir -p -- "$DIST_DIR"
 archive="$DIST_DIR/$name.tar.gz"
@@ -122,4 +127,4 @@ tar -C "$staging" --owner=0 --group=0 --numeric-owner -czf "$archive" p2k
 (cd -- "$DIST_DIR" && sha256sum -- "$name.tar.gz" >"$name.tar.gz.sha256")
 
 p2k_info "Релиз собран: $archive ($(du -h -- "$archive" | cut -f1))"
-cat "$root/VERSIONS.txt"
+cat "$app/VERSIONS.txt"

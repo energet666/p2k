@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Загружает Xray-core в opt/xray и проверяет контрольную сумму.
+# Загружает Xray-core в app/opt/xray и проверяет контрольную сумму.
 #   build/install-xray.sh [версия]     например: build/install-xray.sh 26.3.27
 #
 # Загрузка идёт через px, если не задана переменная https_proxy
@@ -8,11 +8,12 @@
 
 set -Eeuo pipefail
 
-P2K_DIR="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
-# shellcheck source=common.sh
+P2K_ROOT="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
+P2K_DIR="$P2K_ROOT/app"
+# shellcheck source=../app/lib/common.sh
 . "$P2K_DIR/lib/common.sh"
 # shellcheck source=download.sh
-. "$P2K_DIR/build/download.sh"
+. "$P2K_ROOT/build/download.sh"
 
 XRAY_DIR="$(dirname -- "$XRAY_BIN")"
 RELEASE_BASE="https://github.com/XTLS/Xray-core/releases"

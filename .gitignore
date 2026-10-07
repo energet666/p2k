@@ -1,17 +1,17 @@
 # Рабочие данные: профиль браузера, журналы, служебные файлы
-/data/
+/app/data/
 
 # Загружаемые компоненты
-/opt/xray/
-/opt/chromium/
+/app/opt/xray/
+/app/opt/chromium/
 
 # Ярлыки, которые создаёт setup.sh для конкретного каталога
 /p2k-terminal.desktop
 /p2k-chrome.desktop
 
-# Личная конфигурация Xray
-/xray-config.json
-/xray-config.json.*
+# Личная конфигурация Xray и её резервные копии
+/app/xray-config.json
+/app/xray-config.json.*
 
 # Архивы комплекта
 /dist/

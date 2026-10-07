@@ -3,8 +3,8 @@
 # Запускает px и открывает терминал, в котором программы ходят
 # в интернет через обычный HTTP-прокси без логина и пароля.
 #
-#   ./p2k-terminal.sh              интерактивная оболочка
-#   ./p2k-terminal.sh команда ...  выполнить одну команду через прокси
+#   app/p2k-terminal.sh              интерактивная оболочка
+#   app/p2k-terminal.sh команда ...  выполнить одну команду через прокси
 #
 # Если скрипт запущен без терминала (ярлыком с рабочего стола),
 # он сам откроет окно терминала.
@@ -27,47 +27,13 @@ http_proxy, https_proxy и другие. Они указывают на лока
 EOF
 }
 
-# Ищет эмулятор терминала и запускает в нём этот же скрипт.
-open_in_terminal() {
-    local self="$P2K_DIR/p2k-terminal.sh"
-    local -a cmd=()
-
-    if [[ -n ${P2K_TERMINAL:-} ]]; then
-        # Пользовательская команда, например: P2K_TERMINAL="konsole -e"
-        read -r -a cmd <<<"$P2K_TERMINAL"
-    elif command -v x-terminal-emulator >/dev/null; then
-        cmd=(x-terminal-emulator -e)
-    elif command -v fly-term >/dev/null; then
-        cmd=(fly-term -e)
-    elif command -v konsole >/dev/null; then
-        cmd=(konsole -e)
-    elif command -v xfce4-terminal >/dev/null; then
-        cmd=(xfce4-terminal -x)
-    elif command -v mate-terminal >/dev/null; then
-        cmd=(mate-terminal -x)
-    elif command -v gnome-terminal >/dev/null; then
-        cmd=(gnome-terminal --)
-    elif command -v qterminal >/dev/null; then
-        cmd=(qterminal -e)
-    elif command -v lxterminal >/dev/null; then
-        cmd=(lxterminal -e)
-    elif command -v xterm >/dev/null; then
-        cmd=(xterm -e)
-    else
-        p2k_fail "не найден эмулятор терминала. Запустите $self из открытого терминала."
-    fi
-
-    export P2K_IN_TERMINAL=1
-    exec "${cmd[@]}" "$self" "$@"
-}
-
 if [[ ${1:-} == -h || ${1:-} == --help ]]; then
     usage
     exit 0
 fi
 
 if [[ ! -t 0 || ! -t 1 ]] && [[ -z ${P2K_IN_TERMINAL:-} ]] && (($# == 0)); then
-    open_in_terminal "$@"
+    p2k_open_in_terminal "$P2K_DIR/p2k-terminal.sh" "$@"
 fi
 
 launched_by_shortcut="${P2K_IN_TERMINAL:-}"

@@ -2,8 +2,8 @@
 #
 # Создаёт xray-config.json из ссылки на сервер.
 #
-#   ./p2k-xray-config.sh                 спросит ссылку, её можно вставить
-#   ./p2k-xray-config.sh 'vless://...'   ссылка аргументом (в кавычках)
+#   app/p2k-xray-config.sh                 спросит ссылку, её можно вставить
+#   app/p2k-xray-config.sh 'vless://...'   ссылка аргументом (в кавычках)
 #
 # Поддерживаются ссылки vless://, trojan:// и ss:// (Shadowsocks).
 # Транспорты: tcp (raw), ws, grpc, httpupgrade, xhttp, kcp.
@@ -206,7 +206,10 @@ if [[ -z $link ]]; then
         IFS= read -r link || true
     fi
 fi
-link="${link//[[:space:]]/}"
+# Пробелы по краям появляются при копировании, внутри ссылки они допустимы
+# только в названии сервера после «#».
+link="${link#"${link%%[![:space:]]*}"}"
+link="${link%"${link##*[![:space:]]}"}"
 [[ -n $link ]] || p2k_fail "ссылка не указана"
 
 scheme="${link%%://*}"
