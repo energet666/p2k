@@ -30,6 +30,7 @@ RELEASE_FILES=(
     p2k-terminal.sh
     p2k-chrome.sh
     p2k-check.sh
+    p2k-xray-config.sh
     px.ini
     xray-config.example.json
     lib

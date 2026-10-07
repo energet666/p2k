@@ -287,7 +287,7 @@ p2k_system_gssapi() {
 #   system   только системная;
 #   bundled  только встроенная.
 p2k_px_command() {
-    local -n out="$1"
+    local -n _p2k_cmd_out="$1"
     shift
     local mode="${P2K_GSSAPI:-auto}" lib=""
 
@@ -302,10 +302,10 @@ p2k_px_command() {
 
     if [[ -n $lib ]]; then
         P2K_GSSAPI_USED="system:$lib"
-        out=(env "LD_PRELOAD=$lib${LD_PRELOAD:+:$LD_PRELOAD}" "$PX_BIN" "$@")
+        _p2k_cmd_out=(env "LD_PRELOAD=$lib${LD_PRELOAD:+:$LD_PRELOAD}" "$PX_BIN" "$@")
     else
         P2K_GSSAPI_USED=bundled
-        out=("$PX_BIN" "$@")
+        _p2k_cmd_out=("$PX_BIN" "$@")
     fi
 }
 

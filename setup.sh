@@ -159,7 +159,7 @@ fi
 
 # 4. Конфигурация Xray.
 if [[ ! -f $XRAY_CONFIG ]]; then
-    problems+=("нет xray-config.json: положите свой конфиг Xray в $XRAY_CONFIG (см. README.md)")
+    problems+=("нет конфигурации Xray для браузера: выполните ./p2k-xray-config.sh и вставьте ссылку на сервер (vless://, trojan:// или ss://)")
 elif [[ -x $XRAY_BIN ]] && ! "$XRAY_BIN" run -test -config "$XRAY_CONFIG" >/dev/null 2>&1; then
     problems+=("xray-config.json содержит ошибки: проверьте его командой opt/xray/xray run -test -config xray-config.json")
 fi
