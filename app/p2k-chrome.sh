@@ -79,12 +79,23 @@ p2k_xray_acquire
 download_dir="$(real_download_dir)"
 prepare_profile "$download_dir"
 
+# Cookie и пароли Chromium шифрует ключом из хранилища, заданного
+# --password-store. basic не обращается к системе, но не читает профиль,
+# созданный с системным хранилищем ключей (gnome-libsecret, kwallet).
+password_store="${P2K_CHROME_PASSWORD_STORE:-basic}"
+case $password_store in
+    basic | gnome-libsecret | kwallet | kwallet5 | kwallet6) ;;
+    *) p2k_fail "Неизвестное значение P2K_CHROME_PASSWORD_STORE: $password_store. Допустимо: basic, gnome-libsecret, kwallet, kwallet5, kwallet6." ;;
+esac
+[[ $password_store == basic ]] ||
+    p2k_warn "Chromium использует системное хранилище ключей ($password_store)"
+
 chromium_args=(
     --user-data-dir="$CHROMIUM_PROFILE"
     --proxy-server="$P2K_XRAY_URL"
     --no-first-run
     --no-default-browser-check
-    --password-store=basic
+    --password-store="$password_store"
     --force-webrtc-ip-handling-policy=disable_non_proxied_udp
 )
 if [[ ${P2K_CHROME_NO_SANDBOX:-0} == 1 ]]; then
